@@ -26,7 +26,7 @@ import json
 import argparse
 from typing import List
 from chardet.universaldetector import UniversalDetector
-
+import re
 import torch
 import langchain
 from langchain_chroma import Chroma
@@ -35,7 +35,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.document_loaders import TextLoader
 from langchain.text_splitter import TextSplitter, RecursiveCharacterTextSplitter
 from nltk.tokenize import RegexpTokenizer
-
+from tqdm import tqdm
 
 def find_all_file(path: str) -> List[str]:
     """
@@ -368,9 +368,55 @@ def construct_retrieval_database(data_name_list: List[str],
         retrieval_name = 'mix_' + retrieval_name
     vector_store_path = f"./RetrievalBase/{retrieval_name}/{encoder_model_name}"
     print(f'generating chroma database of {retrieval_name} using {encoder_model_name}')
-    retrieval_database = Chroma.from_documents(documents=split_texts,
-                                               embedding=embed_model,
-                                               persist_directory=vector_store_path)
+    print(f'[DEBUG] Total chunks to embed: {len(split_texts)}')
+    if len(split_texts) > 0:
+        print(f'[DEBUG] Example chunk: {split_texts[0].page_content[:150]!r}')
+    else:
+        print("⚠️ No text chunks found — check your split method!")        # tqdm progress bar for database creation
+   # with tqdm(total=len(split_texts), desc="Building retrieval database", unit="doc") as pbar:
+    #    retrieval_database = Chroma.from_documents(
+     #       documents=split_texts,
+        #    embedding=embed_model,
+         #   persist_directory=vector_store_path
+       # )
+        #pbar.update(len(split_texts))
+    #retrieval_database = Chroma.from_documents(documents=split_texts,
+    #                                           embedding=embed_model,
+    #
+#                                           persist_directory=vector_store_path)
+    def clean_text(t):
+    # keep \n and \r for your LineBreakTextSplitter, remove other bad chars
+        return re.sub(r"[\x00-\x09\x0B-\x0C\x0E-\x1F\x7F-\x9F\uD800-\uDFFF]", " ", t).encode("utf-8", "ignore").decode("utf-8", "ignore")
+    retrieval_database = Chroma(
+        collection_name=retrieval_name,
+        embedding_function=embed_model,
+        persist_directory=vector_store_path
+    )
+    print(f"[DEBUG] Created Chroma collection '{retrieval_name}' at {vector_store_path}")
+    print(f"[DEBUG] Before insertion: {retrieval_database._collection.count()} records")
+    # Insert in batches
+    batch_size = 2000   # adjust if needed
+    for i in tqdm(range(0, len(split_texts), batch_size), desc="Inserting to Chroma"):
+        batch = split_texts[i:i + batch_size]
+        try:
+            for d in batch: 
+                d.page_content = clean_text(d.page_content)
+
+            retrieval_database.add_documents(batch)
+        except Exception as e:
+            print(f"⚠️ Failed at batch {i}: {e}")
+            for d in batch:
+                try:
+                    d.page_content = clean_text(d.page_content)
+                    retrieval_database.add_documents([d])
+                except Exception:
+                    pass
+       # retrieval_database.persist()   # flush every batch
+    if hasattr(retrieval_database, "persist"):
+        retrieval_database.persist()
+    print(f"[DEBUG] After insertion: {retrieval_database._collection.count()} records")
+    print("✅ Finished embedding & persisting Chroma DB")
+   # return retrieval_database
     return retrieval_database
 
 
@@ -425,10 +471,33 @@ def load_retrieval_database_from_parameter(data_name_list: List[str],
     store_path = f"./{database_store_path}/{retrieval_name}/{encoder_model_name}"
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     embed_model = get_embed_model(encoder_model_name, device, retrival_database_batch_size)
+    import sqlite3, os
+    db_path = os.path.join(store_path, "chroma.sqlite3")
+
+    if os.path.exists(db_path):
+        con = sqlite3.connect(db_path)
+        cur = con.cursor()
+        cur.execute("SELECT name FROM collections;")
+        cols = [r[0] for r in cur.fetchall()]
+        con.close()
+        print("🧩 Collections found in DB:", cols)
+    else:
+        print("⚠️ No chroma.sqlite3 found at", db_path)
+#    col_name = 'langchain'
+   # print("📦 Collection count:", retrieval_database._collection.count())
+    print("🎯 Requested retrieval_name:", retrieval_name)
+ #   retrieval_name = 'langchain'
+#    from langchain_community.vectorstores import Chroma
+    print("Store path:", store_path)
+    import chromadb
+    client = chromadb.PersistentClient(path=store_path)
     retrieval_database = Chroma(
-        embedding_function=embed_model,
-        persist_directory=store_path
+        client=client,
+        collection_name=retrieval_name,
+        embedding_function=embed_model
+       # persist_directory=store_path
     )
+    print("📦 Collection count:", retrieval_database._collection.count())
     return retrieval_database
 
 
@@ -440,6 +509,7 @@ if __name__ == '__main__':
     # We have provided the processed data, so you don't need to execute this code.
     # pre_process_dataset('chatdoctor200k')           # num of dataset is 207408
     # run this code to edit the enron-mail data
+
     pre_process_dataset('enron-mail', 'body')         # num of dataset is 515437
     pre_process_dataset('enron-mail', 'strip')        # num of dataset is 517401
     # split the dataset to train and test if needed
