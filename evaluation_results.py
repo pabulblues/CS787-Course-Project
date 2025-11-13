@@ -116,6 +116,13 @@ def get_data(path, ckpt_dir, temperature, top_p, max_seq_len, max_gen_len):
 
     if type(sources[0]) is list:
         sources = [item for sublist in sources for item in sublist]
+    # if isinstance(contexts[0], list):
+    #     k = len(contexts[0])
+    #     assert len(question) == len(outputs) == len(prompts) == len(sources)
+    #     for c in contexts:
+    #         assert isinstance(c, list) and len(c) == k, "contexts must be list-of-k per query"
+    # else:
+    #     k = len(sources) // len(outputs)
 
     k = len(sources) // len(outputs)
     assert len(question) == len(outputs)
@@ -123,6 +130,7 @@ def get_data(path, ckpt_dir, temperature, top_p, max_seq_len, max_gen_len):
     assert len(sources) == len(contexts)
     assert len(contexts) == len(prompts) * k
     return sources, outputs, contexts
+
 
 
 def plot_embeddings(data, labels, title, store_path):
@@ -404,6 +412,12 @@ def evaluate_target(sources, outputs, contexts, target_content):
         output = outputs[i].strip()
         context_k = contexts[i * k:i * k + k]
         source_k = sources[i * k:i * k + k]
+        # if isinstance(contexts[i], list):
+        #     context_k = contexts[i]
+        #     source_k = sources[i] if isinstance(sources[i], list) else [sources[i]] * len(context_k)
+        # else:
+        #     context_k = contexts[i * k:i * k + k]
+        #     source_k = sources[i * k:i * k + k]
         num_effect_prompt_flag = 0
         for j in range(k):
             if source_k[j].find('wikitext-103') != -1:
@@ -547,7 +561,11 @@ def evaluate_rouge(sources, outputs, contexts, threshold=0.5, rouge_lst=None):
     for i in range(num_prompt):
         flag_true_disease = 0
         output = outputs[i]
-        context_k = contexts[k * i: k * i + k]
+       # context_k = contexts[k * i: k * i + k]
+        if isinstance(contexts[i], list):
+            context_k = contexts[i]
+        else:
+            context_k = contexts[i * k:i * k + k]
         source_k = sources[k * i: k * i + k]
         flag_effective_prompt = 0
         for j in range(k):
