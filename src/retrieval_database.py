@@ -36,7 +36,8 @@ from langchain_community.document_loaders import TextLoader
 from langchain.text_splitter import TextSplitter, RecursiveCharacterTextSplitter
 from nltk.tokenize import RegexpTokenizer
 from tqdm import tqdm
-
+from seed_utils import set_global_seed
+set_global_seed(42)
 def find_all_file(path: str) -> List[str]:
     """
     return the list of all files of a folder
@@ -77,7 +78,7 @@ def get_embed_model(encoder_model_name: str,
             open-ai: OpenAI Embeddings
             all-MiniLM-L6-v2: default Embedding method
             bge-large-en-v1.5: bge-large-en-v1.5 from BAAI
-            e5-base-v2： e5-base-v2 from intfloat
+            e5-base-v2: e5-base-v2 from intfloat
         device: cpu or gpu if available
         retrival_database_batch_size: batch size
     :return:
@@ -129,7 +130,7 @@ def pre_process_dataset(data_name: str, change_method: str = 'body') -> None:
         pre_process_enron_mail: how we pre-process the enron mail dataset
     """
 
-    data_store_path = 'Data'
+    data_store_path = '../Data'
 
     def pre_process_chatdoctor() -> None:
         """
@@ -151,16 +152,14 @@ def pre_process_dataset(data_name: str, change_method: str = 'body') -> None:
                     s += '\n\n'
                 max_len = max(max_len, len(s))
                 f.write(s)
-        print(f'Number of chatdoctor dataset is {len(data)}')  # 207408
-        print(f'Max length of chatdoctor dataset is {max_len}')  # 11772
+        print(f'Number of chatdoctor dataset is {len(data)}')
+        print(f'Max length of chatdoctor dataset is {max_len}')
 
     def pre_process_enron_mail() -> None:
         num_file = 0
         data_path = os.path.join(data_store_path, data_name)
         for file_name in find_all_file(data_path):
-            # detect the encode method of files:
             encoding = get_encoding_of_file(file_name)
-            # load the data
             with open(file_name, 'r', encoding=encoding) as file:
                 data = file.read()
             content = data.split('\n\n')
@@ -185,7 +184,7 @@ def pre_process_dataset(data_name: str, change_method: str = 'body') -> None:
                 if new_content != "" and new_content[-1] != '.' and new_content[-1] != '?' and new_content[-1] != '!':
                     new_content += '.'
             if len(new_content) != 0:
-                path = f'Data/enron-mail-{change_method}/' + file_name[16:] + '.txt'
+                path = f'../Data/enron-mail-{change_method}/' + file_name[16:] + '.txt'
                 num_file += 1
                 if not os.path.exists(os.path.dirname(path)):
                     os.makedirs(os.path.dirname(path))
@@ -209,13 +208,15 @@ def split_dataset(data_name: str, split_ratio: int = 0.99, num_eval: int = 1000,
         max_que_len: max length of the input of the evaluation for enron-mail
     the train-set and the test-set will be stored at folder {data_name}-train and {data_name}-test
     """
-    data_store_path = 'Data'
+    data_store_path = '../Data'
     if data_name == 'chatdoctor':
-        with open('Data/chatdoctor/chatdoctor.txt', 'r', encoding="utf-8") as f:
+        with open('../Data/chatdoctor/chatdoctor.txt', 'r', encoding="utf-8") as f:
             data = f.read()
         data = data.split('\n\n')
         output_train_path = os.path.join(data_store_path, 'chatdoctor-train/chatdoctor.txt')
         output_test_path = os.path.join(data_store_path, 'chatdoctor-test/chatdoctor.txt')
+        os.makedirs(os.path.dirname(output_train_path), exist_ok=True)
+        os.makedirs(os.path.dirname(output_test_path), exist_ok=True)        
         num_ = int(split_ratio * len(data))
         random.shuffle(data)
         with open(output_train_path, 'w', encoding="utf-8") as f:
@@ -232,10 +233,11 @@ def split_dataset(data_name: str, split_ratio: int = 0.99, num_eval: int = 1000,
             item = e_data.split('\noutput: ')
             eval_input.append(item[0][7:])
             eval_output.append(item[1])
-        with open(f'Data/{data_name}-test/eval_input.json', 'w', encoding='utf-8') as file:
+        with open(f'../Data/{data_name}-test/eval_input.json', 'w', encoding='utf-8') as file:
             file.write(json.dumps(eval_input))
-        with open(f'Data/{data_name}-test/eval_output.json', 'w', encoding='utf-8') as file:
+        with open(f'../Data/{data_name}-test/eval_output.json', 'w', encoding='utf-8') as file:
             file.write(json.dumps(eval_output))
+        print("Dataset has been split")
     else:
         """
         If a dataset is stored in multiple files, and you only want to partition the dataset at the file level
@@ -276,7 +278,7 @@ def split_dataset(data_name: str, split_ratio: int = 0.99, num_eval: int = 1000,
                 data = file.read()
             que = tokenizer.tokenize(data)[:max_que_len]
             eval_input.append(' '.join(que))
-        with open(f'Data/{data_name}-test/eval_input.json', 'w', encoding='utf-8') as file:
+        with open(f'../Data/{data_name}-test/eval_input.json', 'w', encoding='utf-8') as file:
             file.write(json.dumps(eval_input))
 
 
@@ -290,7 +292,7 @@ def construct_retrieval_database(data_name_list: List[str],
     """
     Construct a retrieval database from a dataset or multiple datasets
     :param
-    `   data_name_list: The name of the datasets. The datasets are placed in f'./Data/{data_name}'
+    `   data_name_list: The name of the datasets. The datasets are placed in f'./../Data/{data_name}'
             optional: ['enron-mail', 'chatdoctor', 'wikitext-103']
             If you run pre_process_dataset, you can also use: 'enron-mail-body', 'enron-mail-strip'
             If you run split_dataset, you can also use: f'{data_name}-train' and f'{data_name}-test'
@@ -333,7 +335,7 @@ def construct_retrieval_database(data_name_list: List[str],
             splitter_ = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         return splitter_
 
-    data_store_path = 'Data'
+    data_store_path = '../Data'
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     if split_method is None:
@@ -366,27 +368,21 @@ def construct_retrieval_database(data_name_list: List[str],
     retrieval_name = '_'.join(data_name_list)
     if len(data_name_list) != 1:
         retrieval_name = 'mix_' + retrieval_name
-    vector_store_path = f"./RetrievalBase/{retrieval_name}/{encoder_model_name}"
+    vector_store_path = f"../RetrievalBase/{retrieval_name}/{encoder_model_name}"
     print(f'generating chroma database of {retrieval_name} using {encoder_model_name}')
     print(f'[DEBUG] Total chunks to embed: {len(split_texts)}')
     if len(split_texts) > 0:
         print(f'[DEBUG] Example chunk: {split_texts[0].page_content[:150]!r}')
     else:
-        print("⚠️ No text chunks found — check your split method!")        # tqdm progress bar for database creation
-   # with tqdm(total=len(split_texts), desc="Building retrieval database", unit="doc") as pbar:
-    #    retrieval_database = Chroma.from_documents(
-     #       documents=split_texts,
-        #    embedding=embed_model,
-         #   persist_directory=vector_store_path
-       # )
-        #pbar.update(len(split_texts))
-    #retrieval_database = Chroma.from_documents(documents=split_texts,
-    #                                           embedding=embed_model,
-    #
-#                                           persist_directory=vector_store_path)
+        print("No text chunks found - check your split method!")        # tqdm progress bar for database creation
+
     def clean_text(t):
-    # keep \n and \r for your LineBreakTextSplitter, remove other bad chars
-        return re.sub(r"[\x00-\x09\x0B-\x0C\x0E-\x1F\x7F-\x9F\uD800-\uDFFF]", " ", t).encode("utf-8", "ignore").decode("utf-8", "ignore")
+
+        t = re.sub(r"[\x01-\x1F\x7F]", " ", t)
+        t = re.sub(r"[\uD800-\uDFFF]", " ", t)
+        t = t.encode("utf-8", "replace").decode("utf-8", "replace")
+        return t 
+
     retrieval_database = Chroma(
         collection_name=retrieval_name,
         embedding_function=embed_model,
@@ -404,18 +400,17 @@ def construct_retrieval_database(data_name_list: List[str],
 
             retrieval_database.add_documents(batch)
         except Exception as e:
-            print(f"⚠️ Failed at batch {i}: {e}")
+            print(f"Failed at batch {i}: {e}")
             for d in batch:
                 try:
                     d.page_content = clean_text(d.page_content)
                     retrieval_database.add_documents([d])
                 except Exception:
                     pass
-       # retrieval_database.persist()   # flush every batch
     if hasattr(retrieval_database, "persist"):
         retrieval_database.persist()
     print(f"[DEBUG] After insertion: {retrieval_database._collection.count()} records")
-    print("✅ Finished embedding & persisting Chroma DB")
+    print("Finished embedding & persisting Chroma DB")
    # return retrieval_database
     return retrieval_database
 
@@ -453,7 +448,7 @@ def load_retrieval_database_from_parameter(data_name_list: List[str],
     """
     Load the database by some parameters, in this function, it is clearer
     :param
-        data_name_list:The name of the datasets. The datasets are placed in f'./Data/{data_name}'
+        data_name_list:The name of the datasets. The datasets are placed in f'./../Data/{data_name}'
             optional: ['enron-mail', 'chatdoctor', 'wikitext-103']
         encoder_model_name: str. The name of encoder. Default is 'all-MiniLM-L6-v2' from sentence_transformers
             optional: 'open-ai', 'bge-large-en-v1.5', 'all-MiniLM-L6-v2'
@@ -468,7 +463,7 @@ def load_retrieval_database_from_parameter(data_name_list: List[str],
     retrieval_name = '_'.join(data_name_list)
     if len(data_name_list) != 1:
         retrieval_name = 'mix_' + retrieval_name
-    store_path = f"./{database_store_path}/{retrieval_name}/{encoder_model_name}"
+    store_path = f"../{database_store_path}/{retrieval_name}/{encoder_model_name}"
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     embed_model = get_embed_model(encoder_model_name, device, retrival_database_batch_size)
     import sqlite3, os
@@ -480,12 +475,11 @@ def load_retrieval_database_from_parameter(data_name_list: List[str],
         cur.execute("SELECT name FROM collections;")
         cols = [r[0] for r in cur.fetchall()]
         con.close()
-        print("🧩 Collections found in DB:", cols)
+        print("Collections found in DB:", cols)
     else:
-        print("⚠️ No chroma.sqlite3 found at", db_path)
-#    col_name = 'langchain'
-   # print("📦 Collection count:", retrieval_database._collection.count())
-    print("🎯 Requested retrieval_name:", retrieval_name)
+        print("No chroma.sqlite3 found at", db_path)
+
+    print("Requested retrieval_name:", retrieval_name)
  #   retrieval_name = 'langchain'
 #    from langchain_community.vectorstores import Chroma
     print("Store path:", store_path)
@@ -497,7 +491,7 @@ def load_retrieval_database_from_parameter(data_name_list: List[str],
         embedding_function=embed_model
        # persist_directory=store_path
     )
-    print("📦 Collection count:", retrieval_database._collection.count())
+    print("Collection count:", retrieval_database._collection.count())
     return retrieval_database
 
 
@@ -533,13 +527,13 @@ if __name__ == '__main__':
     encoder_model = args.encoder_model
     flag_mix = args.flag_mix
 
-    if dataset_name.find('body') != -1 and not os.path.exists('Data/enron-mail-body'):
+    if dataset_name.find('body') != -1 and not os.path.exists('../Data/enron-mail-body'):
         pre_process_dataset('enron-mail', 'body')
-    if dataset_name.find('strip') != -1 and not os.path.exists('Data/enron-mail-strip'):
+    if dataset_name.find('strip') != -1 and not os.path.exists('../Data/enron-mail-strip'):
         pre_process_dataset('enron-mail', 'strip')
-    if dataset_name.find('train') != -1 and not os.path.exists(f'Data/{dataset_name}'):
+    if dataset_name.find('train') != -1 and not os.path.exists(f'../Data/{dataset_name}'):
         split_dataset(dataset_name[:-6])
-    if dataset_name.find('test') != -1 and not os.path.exists(f'Data/{dataset_name}'):
+    if dataset_name.find('test') != -1 and not os.path.exists(f'../Data/{dataset_name}'):
         split_dataset(dataset_name[:-5])
     if flag_mix is True:
         if dataset_name.find('enron-mail') != -1:

@@ -1,9 +1,11 @@
 import fire
-from llama import Llama
 import warnings
 import json
 import os
+import sys
 from langchain_openai import OpenAI
+from seed_utils import set_global_seed
+set_global_seed(42)
 """
 This file is to run large language model.
 The running instructions have been generated in file f'{experiment name}.sh'
@@ -11,6 +13,12 @@ Please run the following command:
 nohup bash {experiment name}.sh > output_name.out
 or: bash {experiment name}.sh
 """
+BASE = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(BASE, "llama")) # outer llama/
+sys.path.append(os.path.join(BASE, "llama/llama")) # inner llama/llama/
+
+from llama import Llama
+
 # If you want to use OpenAI's model, please set API here
 os.environ['OPENAI_API_KEY'] = 'YOUR API KEY'
 
@@ -19,8 +27,8 @@ def main(
         ckpt_dir: str,       # LLM model name
         path: str,           # input and output place
         tokenizer_path: str = 'tokenizer.model',
-        temperature: float = 0.6,
-        top_p: float = 0.9,
+        temperature: float = 0,
+        top_p: float = 1,
         max_seq_len: int = 4096,
         max_gen_len: int = 256,
         max_batch_size: int = 1,
@@ -56,6 +64,7 @@ def main(
         with open(f'./Inputs&Outputs/{path}/set.json', "r") as file:
             settings = json.load(file)
         summary_model = settings['infor']
+        print(summary_model)
         para_flag = False
         if summary_model.find('-para'):
             para_flag = True
@@ -66,27 +75,29 @@ def main(
                 summary_model = 'gpt-3.5-turbo-instruct'
             llm = OpenAI(model=summary_model, temperature=temperature, top_p=top_p, max_tokens=max_gen_len)
         else:
+            print("reached till model")
             generator = Llama.build(
-                ckpt_dir= 'Model/' + summary_model,
-                tokenizer_path='Model/' + tokenizer_path,
+                ckpt_dir= '../Model/' + summary_model,
+                tokenizer_path='../Model/' + tokenizer_path,
                 max_seq_len=max_seq_len,
                 max_batch_size=max_batch_size,
             )
+            print("called model")
 
         suf = settings['suffix']
         adh_1 = settings['adhesive_con']
         adh_2 = settings['adhesive_prompt']
         with open(f"./Inputs&Outputs/{path}/question.json", 'r', encoding='utf-8') as f_que:
             questions = json.loads(f_que.read())
-        with open(f"./Inputs&Outputs/{path}/context.txt", 'r', encoding='utf-8') as f_con:
+        with open(f"./Inputs&Outputs/{path}/context.json", 'r', encoding='utf-8') as f_con:
             contexts = json.loads(f_con.read())
 
-        su_1 = "Given the following question and context, extract any part of the context" \
-               + " *AS IS* that is relevant to answer the question. If none of the context is relevant" \
+        su_1 = "Given the following question and context, summarize the context(which is dialogue between patient and doctor) in brief " \
+               + " such that it is relevant to answer the question. If none of the context is relevant" \
                + " return NO_OUTPUT.\n\nRemember, *DO NOT* edit the extracted parts of the context.\n\n> Question: "
         if para_flag:
-            su_1 = "Given the following question and context, extract any part of the context" \
-                   + " *AS IS* that is relevant to answer the question. If none of the context is relevant" \
+            su_1 = "Given the following question and context, summarize the context(which is dialogue between patient and doctor) in your own words  " \
+                   + " such that it is relevant to answer the question. If none of the context is relevant" \
                    + " return NO_OUTPUT.\n\n> Question: "
         su_2 = "\n> Context:\n>>>\n"
         su_3 = "\n>>>\nExtracted relevant parts:"
@@ -105,12 +116,13 @@ def main(
                     ans = llm.invoke(prompt_ge_context)
                 else:
                     results = generator.text_completion(
-                        [prompt_ge_context],
+                        [prompt_ge_context.rstrip()+" "],
                         max_gen_len=max_gen_len,
                         temperature=temperature,
                         top_p=top_p,
                     )
                     ans = results[0]['generation']
+                    ans = ans.lstrip("\n ").rstrip()
                 sum_contexts.append(ans)
             summarize_contexts.append(sum_contexts)
             prompt_ge_contexts.append(ge_contexts)
@@ -124,7 +136,7 @@ def main(
             con_u = adh_1.join(summarize_contexts[i])
             prompt = suf[0] + con_u + adh_2 + suf[1] + questions[i] + adh_2 + suf[2]
             prompts.append(prompt)
-        with open(f"./Inputs&Outputs/{path}/prompts.txt", 'w', encoding='utf-8') as f_p:
+        with open(f"./Inputs&Outputs/{path}/prompts.json", 'w', encoding='utf-8') as f_p:
             f_p.write(json.dumps(prompts))
 
     flag_llm = 'llama'
@@ -135,12 +147,15 @@ def main(
         llm = OpenAI(model=ckpt_dir, temperature=temperature, top_p=top_p, max_tokens=max_gen_len)
         flag_llm = 'gpt'
     else:
+        '''
         generator = Llama.build(
-            ckpt_dir='Model/' +  ckpt_dir,
-            tokenizer_path='Model/' + tokenizer_path,
+            ckpt_dir='../Model/' +  ckpt_dir,
+            tokenizer_path='../Model/' + tokenizer_path,
             max_seq_len=max_seq_len,
             max_batch_size=max_batch_size,
         )
+        '''
+        print("using  the same generator")
     # generate output
     print('generating output')
     with open(f"./Inputs&Outputs/{path}/prompts.json", 'r', encoding='utf-8') as f:
@@ -151,12 +166,13 @@ def main(
             ans = llm.invoke(all_prompts[i])
         else:
             results = generator.text_completion(
-                [all_prompts[i]],
+                [all_prompts[i].rstrip() + " "],
                 max_gen_len=max_gen_len,
                 temperature=temperature,
                 top_p=top_p,
             )
             ans = results[0]['generation']
+            ans = ans.lstrip("\n ").rstrip()
         answer.append(ans)
 
     with open(
@@ -167,4 +183,5 @@ def main(
 
 if __name__ == "__main__":
     warnings.filterwarnings("ignore")
+    import os
     fire.Fire(main)
