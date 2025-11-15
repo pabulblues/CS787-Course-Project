@@ -83,12 +83,12 @@ CS787-Course-Project/
     tokenizer.model
     llama-2-7b-chat/
     bge-large-en-v1.5/
-  llama/
   Information/
   S-RAG_analysis/
   README.md
   environment.yml
   src/
+    llama/
     retrieval_database.py
     evaluation_baseline.py
     evaluation_results.py
@@ -110,6 +110,8 @@ Key directories:
 * `src/`: all RAG, sanitization, summarization, evaluation, and prompt generation scripts
 * `S-RAG_analysis/`: auditing module
 * `Information/`: Information useful for attacks
+
+Note: Unzip the zipped folders and insert them as shown in the directory structure
 
 ---
 
@@ -138,11 +140,16 @@ Variants:
 * `generate_prompt_sanitize.py` - for generating prompts with sanitized contexts
 * `generate_prompt_summarizer.py` - for generating prompts with summarized contexts
 
+Note: There is small patch in `generate_prompt_summarizer.py` which must be applied before running
+* add `args = parse_args()` at line:558 inside the `main` function
+* add a space after `run_language_model_summarizer.py` in line:529 inside `get_executable_file` function
+
 In order to capture the privacy utility tradeoff we define a baseline task involving comparision of generated responses by the RAG pipeline with chatdoctor responses for a small subset of the `chatdoctor.txt` dataset. We can run to compute results of baseline task as follows:
 - Run `generate_prompt.py` (or its variants) with  `--flag=1` while running the above generate_prompt.py or their variants. An example is as follows:
 ```bash
 python generate_prompt.py --flag=1
 ``` 
+- Note: Ensure that the correct `exp_name` and `information` is set inside of the `main` function in `generate_prompt.py` or its variants before running (We have set it currently to `chat-target-email`)
 
 
 ### 3. Run the LLM
@@ -179,7 +186,7 @@ python llm_as_judge.py <Model_name> <path_dataset> <path_normal> <path_mitigate>
 
 ### 7. Master run script
 
-Master script can perform all the mitigation/baseline tasks and complete the evaluation
+Master script can perform all the mitigation/baseline tasks and complete the evaluation. Ensure that the correct `exp_name` and `information` is set inside of the `main` function in `generate_prompt.py` or its variants before running (We have set it currently to `chat-target-email`)
 
 ```bash
 sh ./master.sh attack normal chat-target-email
